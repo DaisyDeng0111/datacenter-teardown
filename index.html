@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>数据中心架构爆炸图</title>
+<!-- 整页只用等宽体（--sans 一次都没用到，别顺手把它也预载了：没人用的 preload
+     只是白下 29 KB，还会在控制台留一条 unused-preload 警告）。 -->
+<link rel="preload" href="/fonts/geist-mono-latin-wght.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+/* React 的挂载点不能占一层盒子：body 直接就是 flex / grid 容器，
+   中间多一层挂载节点会掐断 height:100% 的参照链，撑满视口的版面
+   会变成按内容无限长高。display:contents 让它不生成盒子，
+   版面回到直接的父子关系。 */
+#root{display:contents}
+
+/* ── 加载屏 ──────────────────────────────────────────────────────────
+   整段内联在这里，不进样式表也不进打包：它必须在主 chunk 到达之前就画出来。
+   引擎压缩后 350 KB、解压后 1.1 MB，慢一点的网络上那是好几秒的纯白，
+   而纯白读起来就是"这页打不开"。这段东西不到 2 KB，跟 HTML 一起到。 */
+#boot{position:fixed;inset:0;z-index:99;display:grid;place-items:center;background:#0a0b0d;
+  color:#dfe3e8;font:12px/1.6 "Geist Mono Variable",ui-monospace,SFMono-Regular,Menlo,monospace;
+  transition:opacity .34s cubic-bezier(.22,.7,.2,1)}
+#boot.gone{opacity:0;pointer-events:none}
+#boot .in{width:min(340px,72vw)}
+#boot h2{font-size:13px;font-weight:600;letter-spacing:.02em;display:flex;align-items:baseline;gap:8px}
+#boot h2 span{font-size:9.5px;font-weight:400;letter-spacing:.16em;color:#5f6772}
+#boot .sub{margin-top:5px;font-size:9.5px;letter-spacing:.05em;color:#5f6772}
+/* 进度条是一条 2px 的发丝线，不是一个圆角胶囊 —— 这一页的语言里没有胶囊 */
+#boot .bar{position:relative;height:2px;margin:18px 0 9px;background:#1b1f26;overflow:hidden}
+#boot .bar i{position:absolute;inset:0 auto 0 0;width:0;background:#8fb8e8;
+  transition:width .22s cubic-bezier(.22,.7,.2,1)}
+#boot .row{display:flex;justify-content:space-between;align-items:baseline;
+  font-size:9.5px;letter-spacing:.06em;color:#98a0aa}
+#boot .row b{font-weight:500;color:#8fb8e8;font-variant-numeric:tabular-nums}
+#boot.bad .bar i{background:#d8a760}
+#boot.bad .row b{color:#d8a760}
+</style>
+
+<script>
+/* 加载屏的对外接口。它必须留在 head 里、并且排在末尾之前：打包时那个 module
+   标签会被换成一段自己 fetch 的加载器，而加载器就注在 head 里 —— API 晚一步
+   定义，加载器拿到的就是 undefined，会一声不响地退回没有进度的那条路。
+
+   所以元素是懒查的：这段代码跑的时候 body 还一行都没解析到。
+
+   另外：这段注释里一个 HTML 标签都不能写。vite 是按字符串找 head 结束标签来
+   注入 script 的，注释里出现一个，整段就被从中间劈开 —— 报错会是
+   "Illegal return statement"，离真正的原因十万八千里。
+
+   刻度按实测耗时占比分：慢网络上下载占九成以上，所以它独占 0-0.66；
+   后面几段在快机器上加起来也就半秒，跳一下没关系。 */
+window.__boot = (function () {
+  var box, fill, msg, pct, v = 0, label = '', over = false;
+
+  function grab() {
+    if (!box) { box = document.getElementById('boot');
+      if (box) { fill = document.getElementById('boot-fill');
+                 msg = document.getElementById('boot-msg'); pct = document.getElementById('boot-pct') } }
+    return !!box;
+  }
+  function paint() {
+    if (!grab()) return;
+    fill.style.width = (v * 100).toFixed(1) + '%';
+    pct.textContent = Math.round(v * 100) + '%';
+    if (label) msg.textContent = label;
+  }
+  document.addEventListener('DOMContentLoaded', paint);
+
+  function kb(n) { return n < 1048576 ? Math.round(n / 1024) + ' KB' : (n / 1048576).toFixed(1) + ' MB' }
+
+  function set(x, l) {
+    v = Math.max(v, Math.min(1, x));           // 只准往前，回退读起来像卡住了
+    if (l) label = l;
+    paint();
+  }
+  function done() {
+    if (over) return; over = true;
+    set(1, '就绪');
+    if (grab()) { box.classList.add('gone'); setTimeout(function () { box.remove() }, 400) }
+  }
+  return {
+    set: set,
+    /* 下载阶段：真实字节数，不是估的 */
+    dl: function (got, total) { set(0.66 * Math.min(1, got / total), '下载引擎 · ' + kb(got) + ' / ' + kb(total)) },
+    done: done,
+    fail: function (m) { if (grab()) box.classList.add('bad'); set(1, m || '启动失败'); setTimeout(done, 1600) },
+    /* 兜底：万一某一步没回调，也不能把整页永远扣在加载屏底下 */
+    guard: setTimeout(done, 25000),
+  };
+})();
+</script>
+</head>
+<body>
+
+<div id="boot">
+  <div class="in">
+    <h2>数据中心 <span>TEARDOWN</span></h2>
+    <div class="sub">2U 机架服务器 · 软硬件基础设施</div>
+    <div class="bar"><i id="boot-fill"></i></div>
+    <div class="row"><span id="boot-msg">下载引擎</span><b id="boot-pct">0%</b></div>
+  </div>
+</div>
+
+
+<div id="root"></div>
+<script type="module" src="/src/main.tsx"></script>
+</body>
+</html>
