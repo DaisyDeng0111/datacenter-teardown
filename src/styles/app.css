@@ -1,0 +1,155 @@
+/* 爆炸图这件事，难点从来不在「把零件沿 Y 轴拉开」。难点是三条：
+ *
+ *   1. 零件必须是一张可读的表，不是一堆 mesh。
+ *      整页只认一个数组 PARTS —— 每个零件是 {层, 形状, 尺寸, 位置, 释义}。
+ *      于是「换一块硬件」等于换一个数组，而 agent 生成的也正好是这个数组。
+ *   2. 炸开要分层，不能分件。按层拉开，结构关系（谁压在谁上面）才留得住；
+ *      按件各飞各的，那是碎片不是解剖。
+ *   3. 剖切比爆炸更能说明问题。爆炸看堆叠顺序，剖切看内部；两个滑杆各管一件事。
+ *
+ * 内置模型是 AMD Ryzen 9 9950X3D2 Dual Edition（2026-04-22 上市）。选它是因为
+ * 这一代 X3D 的结构本身就值得画一张图：**缓存裸片在计算裸片下面**,
+ * 而不是像前两代那样压在上面 —— 爆炸图能一眼把这件事说清楚。
+ *
+ * 观感是金属：冷灰底、拉丝银、一支冷蓝的高光，全等宽字。
+ * 只有一个地方允许出现第二种颜色 —— CCD 顶面那张图，因为那是这一页要讲的主角。 */
+
+:root{
+  --bg:#0a0b0d; --panel:#101216; --raised:#181b21; --ink:#dfe3e8;
+  --muted:#98a0aa; --faint:#5f6772; --line:#232830; --line-soft:#181c22;
+  --accent:#8fb8e8; --accent-ink:#08111c; --accent-soft:#151d29;
+  --warn:#d8a760; --hot:#e8836a;
+  --r:5px; --r-sm:3px; --r-lg:8px;
+}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--ink);font-family:var(--mono);font-size:12px}
+
+#app{display:grid;grid-template-columns:250px 1fr;height:100vh}
+@media (max-width:1000px){#app{grid-template-columns:212px 1fr}}
+
+/* ── 左栏 ───────────────────────────────────────────────────────── */
+aside{border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;background:var(--panel)}
+.hd{padding:14px 15px 12px;border-bottom:1px solid var(--line)}
+.hd h1{font-size:14px;font-weight:600;letter-spacing:.02em;display:flex;align-items:baseline;gap:7px}
+.hd h1 small{font-size:10px;font-weight:400;color:var(--faint);letter-spacing:.1em}
+.hd p{font-size:10px;color:var(--faint);margin-top:5px;letter-spacing:.05em}
+
+.levels{display:flex;gap:6px;padding:10px 15px;border-bottom:1px solid var(--line)}
+.levels button{flex:1;font:inherit;font-size:10.5px;letter-spacing:.08em;color:var(--muted);
+  background:var(--raised);border:1px solid var(--line);border-radius:var(--r-sm);
+  padding:7px 4px;cursor:pointer;transition:all var(--fast)}
+.levels button:hover{color:var(--ink);border-color:var(--faint)}
+.levels button.on{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+
+.tabs{display:flex;border-bottom:1px solid var(--line)}
+.tabs button{flex:1;font:inherit;font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--faint);background:none;border:0;border-bottom:1px solid transparent;
+  padding:9px 4px;cursor:pointer;transition:all var(--fast)}
+.tabs button:hover{color:var(--muted)}
+.tabs button.on{color:var(--accent);border-bottom-color:var(--accent);background:var(--accent-soft)}
+
+.pane{flex:1;min-height:0;overflow:auto;display:none}
+.pane.on{display:block}
+
+.ix{display:flex;align-items:center;gap:9px;padding:8px 15px;cursor:pointer;
+  border-left:2px solid transparent;transition:background var(--fast)}
+.ix:hover{background:var(--raised)}
+.ix.on{background:var(--raised);border-left-color:var(--accent)}
+.ix .no{font-size:9.5px;color:var(--faint);width:15px;flex:none}
+.ix .nm{flex:1;font-size:11.5px;line-height:1.4;min-width:0}
+.ix .nm b{display:block;font-weight:500}
+.ix .nm i{font-style:normal;font-size:9.5px;color:var(--faint);letter-spacing:.04em}
+.ix .tg{font-size:8.5px;letter-spacing:.08em;color:var(--accent);border:1px solid var(--accent-soft);
+  background:var(--accent-soft);border-radius:2px;padding:1.5px 4px;flex:none}
+.ix.off{opacity:.34}
+.ix .eye{width:14px;flex:none;opacity:0;color:var(--faint);font-size:10px;text-align:center}
+.ix:hover .eye,.ix.off .eye{opacity:1}
+
+.drop{margin:12px 15px 14px;border:1px dashed var(--line);border-radius:var(--r);
+  padding:13px 12px;text-align:center;cursor:pointer;transition:all var(--fast);position:relative}
+.drop:hover,.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.drop b{display:block;font-size:10.5px;color:var(--muted);letter-spacing:.04em}
+.drop i{display:block;font-style:normal;font-size:9.5px;color:var(--faint);margin-top:5px;line-height:1.6}
+.drop img{width:100%;border-radius:3px;display:block}
+.drop input{display:none}
+.refctl{margin:0 15px 14px;display:none}
+.refctl.on{display:block}
+
+.foot{border-top:1px solid var(--line);padding:9px 15px 11px;font-size:9.5px;
+  color:var(--faint);line-height:1.8;letter-spacing:.04em}
+.foot b{color:var(--muted);font-weight:400}
+
+/* ── 舞台 ───────────────────────────────────────────────────────── */
+#stage{position:relative;overflow:hidden;background:
+  radial-gradient(120% 90% at 50% 12%, #0a1512 0%, var(--bg) 62%)}
+canvas{display:block;position:absolute;inset:0;width:100%;height:100%;z-index:0}
+#svg{position:absolute;inset:0;z-index:2;pointer-events:none;overflow:visible}
+#tips{position:absolute;inset:0;z-index:3;pointer-events:none}
+
+/* 扫描线 —— 给到能看出「这是块屏幕」就停手。再多一点画面就开始发脏，
+   而爆炸图最不能忍的就是脏。 */
+#stage::after{content:'';position:absolute;inset:0;z-index:4;pointer-events:none;
+  background:repeating-linear-gradient(to bottom,rgba(0,0,0,.5) 0 1px,transparent 1px 3px);
+  opacity:.16}
+
+.crumb{position:absolute;left:16px;top:13px;z-index:5;font-size:10px;color:var(--faint);letter-spacing:.09em}
+.crumb b{color:var(--muted);font-weight:400}
+.stat{position:absolute;right:16px;top:13px;z-index:5;text-align:right;font-size:10px;
+  color:var(--faint);letter-spacing:.09em;line-height:1.8}
+.stat em{font-style:normal;color:var(--accent)}
+.stat .dot{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--accent);
+  margin-left:5px;vertical-align:middle;animation:kit-pulse 2.4s infinite}
+
+.tip{position:absolute;transform:translate(0,-50%);background:color-mix(in srgb,var(--panel) 92%,transparent);
+  border:1px solid var(--accent);border-radius:3px;padding:6px 9px;max-width:230px;
+  font-size:10.5px;line-height:1.55;color:var(--ink);letter-spacing:.02em}
+.tip b{display:block;color:var(--accent);font-size:11px;margin-bottom:3px;letter-spacing:.05em}
+.tip i{font-style:normal;color:var(--faint);font-size:9.5px}
+.tip-brands{display:block;margin-top:5px;padding-top:5px;border-top:1px dashed color-mix(in srgb,var(--accent) 40%,transparent);
+  font-size:9.5px;line-height:1.6;color:var(--ink)}
+.tip-brands em{display:block;font-style:normal;color:var(--accent);font-size:9px;letter-spacing:.12em;
+  margin-top:3px;opacity:.85}
+.tip-brands em:first-child{margin-top:0}
+
+/* ── 底部控制条 ──────────────────────────────────────────────────── */
+#dock{position:absolute;left:50%;bottom:15px;transform:translateX(-50%);z-index:5;
+  display:flex;align-items:center;gap:14px;background:color-mix(in srgb,var(--panel) 90%,transparent);
+  border:1px solid var(--line);border-radius:6px;padding:9px 14px;backdrop-filter:blur(9px);
+  max-width:calc(100% - 32px);flex-wrap:wrap;justify-content:center}
+.sl{display:flex;align-items:center;gap:8px}
+.sl label{font-size:9.5px;letter-spacing:.09em;color:var(--faint);white-space:nowrap}
+.sl output{font-size:10px;color:var(--accent);width:30px;text-align:right;font-variant-numeric:tabular-nums}
+input[type=range]{-webkit-appearance:none;appearance:none;width:104px;height:16px;background:none;cursor:pointer}
+input[type=range]::-webkit-slider-runnable-track{height:1px;background:var(--line)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:9px;height:9px;border-radius:50%;
+  background:var(--accent);margin-top:-4px;box-shadow:0 0 7px var(--accent)}
+input[type=range]::-moz-range-track{height:1px;background:var(--line)}
+input[type=range]::-moz-range-thumb{width:9px;height:9px;border:0;border-radius:50%;background:var(--accent)}
+.vsep{width:1px;height:20px;background:var(--line)}
+.tb{font:inherit;font-size:10px;letter-spacing:.08em;color:var(--muted);background:none;
+  border:1px solid var(--line);border-radius:3px;padding:5px 9px;cursor:pointer;transition:all var(--fast)}
+.tb:hover{color:var(--ink);border-color:var(--faint)}
+.tb.on{color:var(--accent-ink);background:var(--accent);border-color:var(--accent)}
+
+#hint{position:absolute;left:16px;bottom:16px;z-index:5;font-size:9.5px;color:var(--faint);
+  line-height:1.85;letter-spacing:.05em;pointer-events:none}
+#gate{position:absolute;inset:0;z-index:9;display:none;place-content:center;text-align:center;
+  background:var(--bg);color:var(--muted);font-size:12px;line-height:2;padding:40px}
+
+/* ── 移动端（≤760px）：舞台在上占 62 屏高，索引面板在下自然滚动 ── */
+@media (max-width:760px){
+  html,body{overflow:auto}
+  #app{display:flex;flex-direction:column;height:auto;min-height:100dvh}
+  #stage{order:1;flex:none;height:62dvh}
+  aside{order:2;border-right:0;border-top:1px solid var(--line);min-height:0}
+  .pane{overflow:visible;flex:none}
+  .ix{padding:12px 15px;min-height:44px}                 /* 触控目标 ≥44px */
+  .tabs button{padding:13px 4px}
+  .tb{min-height:36px;padding:8px 12px}
+  #dock{gap:9px;padding:8px 10px;bottom:calc(10px + env(safe-area-inset-bottom))}
+  #hint{display:none}
+  .crumb{left:12px;top:calc(10px + env(safe-area-inset-top))}
+  .stat{right:12px;top:calc(10px + env(safe-area-inset-top))}
+  .drop{margin:12px 15px calc(14px + env(safe-area-inset-bottom))}
+  .foot{padding-bottom:calc(11px + env(safe-area-inset-bottom))}
+}
